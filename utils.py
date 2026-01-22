@@ -34,26 +34,35 @@ def create_features(df):
     df["Target"] = np.where(df["Return"].shift(-1) > 0, 1, 0)
     df.dropna(inplace=True)
     return df
-
 def predict_signal(df):
-    X = df[["Return", "MA5", "MA10"]]
-    y = df["Target"]
+    if df is None or df.empty or len(df) < 30:
+        return "HOLD 🟡", 0.0, None, None, None
 
-    model = LogisticRegression()
-    model.fit(X[:-1], y[:-1])
+    features = ["MA5", "MA10", "RSI"]
+    X = df[features].iloc[:-1]
+    y = (df["Close"].shift(-1) > df["Close"]).astype(int).iloc[:-1]
 
-    pred = model.predict(X.tail(1))[0]
-    prob = model.predict_proba(X.tail(1))[0][pred]
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X, y)
 
     latest = df.iloc[-1]
-    entry = round(latest["Close"], 2)
-    atr = latest["ATR"]
+    latest_features = latest[features].values.reshape(1, -1)
 
-    if pred == 1 and latest["Close"] > latest["MA5"] > latest["MA10"]:
+    pred = model.predict(latest_features)[0]
+    prob = model.predict_proba(latest_features)[0][pred]
+
+    close = float(latest["Close"])
+    ma5 = float(latest["MA5"])
+    ma10 = float(latest["MA10"])
+    atr = float(latest["ATR"])
+
+    entry = round(close, 2)
+
+    if pred == 1 and close > ma5 and ma5 > ma10:
         signal = "BUY 🟢"
         sl = round(entry - 1.5 * atr, 2)
         tp = round(entry + 3 * atr, 2)
-    elif pred == 0 and latest["Close"] < latest["MA5"] < latest["MA10"]:
+    elif pred == 0 and close < ma5 and ma5 < ma10:
         signal = "SELL 🔴"
         sl = round(entry + 1.5 * atr, 2)
         tp = round(entry - 3 * atr, 2)
@@ -62,4 +71,4 @@ def predict_signal(df):
         sl = None
         tp = None
 
-    return signal, prob, entry, sl, tp
+    return signal, round(prob * 100, 2), entry, sl, tp
